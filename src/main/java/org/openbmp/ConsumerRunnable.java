@@ -26,7 +26,7 @@ import java.util.concurrent.*;
 import java.util.regex.Pattern;
 
 /**
- * MySQL Consumer class
+ * Consumer class
  *
  *   A thread to process a topic partition.  Supports all openbmp.parsed.* topics.
  */

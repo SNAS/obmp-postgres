@@ -1,4 +1,4 @@
-# OpenBMP PostgreSQL Consumer
+# OpenBMP PostgreSQL Backend
 
 
 The PostgreSQL (PSQL) consumer implements the OpenBMP [Message Bus API](https://github.com/OpenBMP/openbmp/blob/master/docs/MESSAGE_BUS_API.md) **parsed**
@@ -188,142 +188,12 @@ dump, only incremental updates are sent (standard BGP here) allowing the consume
 It is expected that after RIB DUMP with stable routers/peers, BGP updates will be
 in the DB in less than 100ms from when the router transmits the BMP message. 
 
-PostgreSQL Server
------------------
-You will need a postgres server.  You **MUST** use PostgreSQL **10.x** or greater.  
+Documentation
+-------------
 
-Follow the install intructions under [PostgreSQL Download](https://www.postgresql.org/download/) to install.
-
-
-#### Example Installing Postgres 10.x on Ubuntu 10.x
-
-```sh
-echo "deb http://apt.postgresql.org/pub/repos/apt/ xenial-pgdg main" > /etc/apt/sources.list.d/pgdg.list
-
-wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-
-sudo apt-get update
-
-sudo apt-get install postgresql-10
-```
-
-### Configure Postgres
-You will need to create the **openbmp** user and database.  You also should adjust/tune the memory
-settings. 
-
-TBD - add details here
-
-
-Building Source
----------------
-
-### Dependencies
-- Java 1.8 or greater
-- Maven 3.x or greater
-- Python psycopg2-binary
- 
-#### Example: Install depends on Ubuntu 16.04:
-    sudo apt-get install git openjdk-9-jdk git openjdk-9-jre-headless maven
-    sudo pip install psycopg2-binary
-    
-
-### Build
-You can build from source using maven as below:
-
-
-#### (1) Install openbmp-java-api-message
-    
-    git clone https://github.com/OpenBMP/openbmp-java-api-message.git
-    cd openbmp-java-api-message
-    mvn clean install
-
-#### (2) Build obmp-psql
-
-    cd ../
-    git clone https://github.com/OpenBMP/obmp-psql.git
-    cd obmp-psql
-    mvn clean package
-    
-> The above will create a JAR file under **target/**.  The JAR file is the complete package, which includes the dependancies. 
-
-Running
--------
-
-#### Edit the configuration
-
-You will first need to extract the configuration file and then modify it per your install/needs.  The default
-will work for most as long as the Kafka instance is on the same machine/host.  Normally you will want to
-at a minimum change the default kafka bootstrap server.   
-
-##### (1) Extract the default configuration file from the JAR
-```sh
-unzip obmp-psql-consumer-0.1.0-SNAPSHOT.jar obmp-psql.yml
-```
-
-You should have ```obmp-psql.yml``` now in the current working directory.
-
-##### (2) Edit the configuration file
-
-**vi** (or sed) ```obmp-psql.yml```.  The configuration file has inline documentation.
-
-#### Run the JAR
-
-> ##### NOTE: 
-> The configuration file is specified using the **-cf** option. 
-
-```sh
-nohup java -Xmx2g -Xms128m -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions \
-         -XX:InitiatingHeapOccupancyPercent=30 -XX:G1MixedGCLiveThresholdPercent=30 \
-         -XX:MaxGCPauseMillis=200 -XX:ParallelGCThreads=20 -XX:ConcGCThreads=5 \
-         -Duser.timezone=UTC \
-         -jar obmp-psql-consumer-0.1.0-SNAPSHOT.jar \
-         -cf obmp-psql.yml > psql-console.log &
-```
-
-The psql-console.log file will capture any console/STDOUT messages.  This replaces
-the nohup.out file.  
-
-The normal consumer log file will default to current working directory as ```obmp-psql.log```. This
-file will automatically be rotated and stored compressed under a date folder. See below on how to
-customize the log4j configuration. 
-
-
-### Debug/Logging Changes
-You can define your own **log4j2.yml** (yml or any format you prefer) by supplying
-the ```-Dlog4j.configurationFile=<filename>``` option to java when running the JAR.   
-
-#### Example log4j2.yml 
-Below is the default ```log4j2.yml```.  Use this as a starting config. 
- 
-```yaml
-Configuration:
-  status: warn
-
-  Appenders:
-    Console:
-      name: Console
-      target: SYSTEM_OUT
-      PatternLayout:
-        Pattern: "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n"
-
-    RollingFile:
-      name: file
-      fileName: "obmp-psql.log"
-      filePattern: "$${date:yyyy-MM}/obmp-psql-%d{MM-dd-yyyy}-%i.log.gz"
-      PatternLayout:
-        Pattern: "%d{yyyy-MM-dd HH:mm:ss} [%t] %-5level %logger{36} - %msg%n"
-      Policies:
-        SizeBasedTriggeringPolicy:
-          size: "75 MB"
-      DefaultRolloverStrategy:
-        max: 30
-
-  Loggers:
-    Root:
-      level: info
-      AppenderRef:
-        ref: file
-```
+- [Postgres Server Setup](docs/POSTGRES.md)
+- [Build and Install](docs/BUILD.md)
+- [Running App](docs/RUN.md)
 
 
 

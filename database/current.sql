@@ -459,9 +459,9 @@ CREATE TABLE stats_chg_byprefix (
 	withdraws               bigint              NOT NULL DEFAULT 0
 ) TABLESPACE timeseries;
 
-CREATE UNIQUE INDEX ON stats_chg_byprefix (interval_time,peer_hash_id,prefix,prefix_len);
+CREATE UNIQUE INDEX ON stats_chg_byprefix (interval_time,peer_hash_id,prefix);
 CREATE INDEX ON stats_chg_byprefix (peer_hash_id);
-CREATE INDEX ON stats_chg_byprefix (prefix,prefix_len);
+CREATE INDEX ON stats_chg_byprefix (prefix);
 
 
 -- convert to timescaledb
@@ -513,7 +513,7 @@ BEGIN
 	     WHERE timestamp >= to_timestamp((extract(epoch from now())::bigint / 300)::bigint * 300) at time zone 'utc' - int_window
 	           AND timestamp < to_timestamp((extract(epoch from now())::bigint / 300)::bigint * 300) at time zone 'utc'   -- current minute
 	     GROUP BY IntervalTime,peer_hash_id,prefix,prefix_len
-	ON CONFLICT (interval_time,peer_hash_id,prefix,prefix_len) DO UPDATE
+	ON CONFLICT (interval_time,peer_hash_id,prefix) DO UPDATE
 		SET updates=excluded.updates, withdraws=excluded.withdraws;
 
 END;
