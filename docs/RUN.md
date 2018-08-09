@@ -1,5 +1,13 @@
 # Running OpenBMP Postgres App
 
+Tune Linux Swapiness
+--------------------
+
+    sysctl -w vm.swappiness=10
+    
+    sync && echo 3 > /proc/sys/vm/drop_caches
+    
+
 Cron jobs
 ---------
 
