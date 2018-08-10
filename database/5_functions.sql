@@ -38,60 +38,60 @@ CREATE OR REPLACE FUNCTION show_table_info()
 -- Function to add partitions based on routers index
 --    A new partition will be added to each table (currently ip_rib)
 --    The routers index check constrain will be updated
-CREATE OR REPLACE FUNCTION add_routers_partition()
-	RETURNS smallint AS $$
-DECLARE
-	_parts smallint := 0;
-BEGIN
-
-	select count(i.inhrelid) INTO _parts
-        from pg_catalog.pg_inherits i
-            join pg_catalog.pg_class cl on i.inhparent = cl.oid
-            join pg_catalog.pg_namespace nsp on cl.relnamespace = nsp.oid
-        where nsp.nspname = 'public'
-            and cl.relname = 'ip_rib';
-
-	-- Adjust the max as needed - right now a good default is 500
-	IF (_parts < 500) THEN
-		_parts := _parts + 1;
-		EXECUTE format('CREATE TABLE ip_rib_p%s PARTITION OF ip_rib
-		                    FOR VALUES IN (%s)', _parts, _parts);
-
-		EXECUTE format('CREATE UNIQUE INDEX ON ip_rib_p%s (hash_id)', _parts);
-		EXECUTE format('CREATE INDEX ON ip_rib_p%s (peer_hash_id)', _parts);
-		EXECUTE format('CREATE INDEX ON ip_rib_p%s (base_attr_hash_id)', _parts);
-		EXECUTE format('CREATE INDEX ON ip_rib_p%s (prefix)', _parts);
-		EXECUTE format('CREATE INDEX ON ip_rib_p%s (isWithdrawn)', _parts);
-		EXECUTE format('CREATE INDEX ON ip_rib_p%s (origin_as)', _parts);
-		EXECUTE format('CREATE INDEX ON ip_rib_p%s (prefix_bits)', _parts);
-
-		EXECUTE format('ALTER TABLE routers drop constraint routers_index_check, add CONSTRAINT routers_index_check CHECK (index <= %s)', _parts);
-
-		EXECUTE format('DROP TRIGGER IF EXISTS ins_ip_rib_p%s ON ip_rib_p%s',_parts,_parts);
-
-		EXECUTE format('CREATE TRIGGER ins_ip_rib_p%s AFTER INSERT ON ip_rib_p%s FOR EACH ROW EXECUTE PROCEDURE t_ip_rib_insert();',_parts, _parts);
-
-		EXECUTE format('DROP TRIGGER IF EXISTS upd_ip_rib_p%s ON ip_rib_p%s',_parts,_parts);
-
-		EXECUTE format('CREATE TRIGGER upd_ip_rib_p%s BEFORE UPDATE ON ip_rib_p%s FOR EACH ROW EXECUTE PROCEDURE t_ip_rib_update();',_parts, _parts);
-
-	END IF;
-
-	RETURN _parts;
-END;
-$$ LANGUAGE plpgsql;
-
+-- CREATE OR REPLACE FUNCTION add_routers_partition()
+-- 	RETURNS smallint AS $$
+-- DECLARE
+-- 	_parts smallint := 0;
+-- BEGIN
+--
+-- 	select count(i.inhrelid) INTO _parts
+--         from pg_catalog.pg_inherits i
+--             join pg_catalog.pg_class cl on i.inhparent = cl.oid
+--             join pg_catalog.pg_namespace nsp on cl.relnamespace = nsp.oid
+--         where nsp.nspname = 'public'
+--             and cl.relname = 'ip_rib';
+--
+-- 	-- Adjust the max as needed - right now a good default is 500
+-- 	IF (_parts < 500) THEN
+-- 		_parts := _parts + 1;
+-- 		EXECUTE format('CREATE TABLE ip_rib_p%s PARTITION OF ip_rib
+-- 		                    FOR VALUES IN (%s)', _parts, _parts);
+--
+-- 		EXECUTE format('CREATE UNIQUE INDEX ON ip_rib_p%s (hash_id)', _parts);
+-- 		EXECUTE format('CREATE INDEX ON ip_rib_p%s (peer_hash_id)', _parts);
+-- 		EXECUTE format('CREATE INDEX ON ip_rib_p%s (base_attr_hash_id)', _parts);
+-- 		EXECUTE format('CREATE INDEX ON ip_rib_p%s (prefix)', _parts);
+-- 		EXECUTE format('CREATE INDEX ON ip_rib_p%s (isWithdrawn)', _parts);
+-- 		EXECUTE format('CREATE INDEX ON ip_rib_p%s (origin_as)', _parts);
+-- 		EXECUTE format('CREATE INDEX ON ip_rib_p%s (prefix_bits)', _parts);
+--
+-- 		EXECUTE format('ALTER TABLE routers drop constraint routers_index_check, add CONSTRAINT routers_index_check CHECK (index <= %s)', _parts);
+--
+-- 		EXECUTE format('DROP TRIGGER IF EXISTS ins_ip_rib_p%s ON ip_rib_p%s',_parts,_parts);
+--
+-- 		EXECUTE format('CREATE TRIGGER ins_ip_rib_p%s AFTER INSERT ON ip_rib_p%s FOR EACH ROW EXECUTE PROCEDURE t_ip_rib_insert();',_parts, _parts);
+--
+-- 		EXECUTE format('DROP TRIGGER IF EXISTS upd_ip_rib_p%s ON ip_rib_p%s',_parts,_parts);
+--
+-- 		EXECUTE format('CREATE TRIGGER upd_ip_rib_p%s BEFORE UPDATE ON ip_rib_p%s FOR EACH ROW EXECUTE PROCEDURE t_ip_rib_update();',_parts, _parts);
+--
+-- 	END IF;
+--
+-- 	RETURN _parts;
+-- END;
+-- $$ LANGUAGE plpgsql;
+--
 -- add partitions
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
-select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
+-- select add_routers_partition();
 
 
 -- Function to find the next available router index
