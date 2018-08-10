@@ -11,7 +11,7 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
 
 -- Use different disk for history/log/time series
-CREATE TABLESPACE timeseries LOCATION '/data1/postgres/ts';
+CREATE TABLESPACE timeseries LOCATION '/data/ts/postgres';
 
 
 -- -----------------------------------------------------
