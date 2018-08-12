@@ -297,9 +297,9 @@ CREATE TABLE ip_rib (
 CREATE INDEX ON ip_rib (peer_hash_id);
 CREATE INDEX ON ip_rib (base_attr_hash_id);
 CREATE INDEX ON ip_rib USING GIST (prefix inet_ops);
-CREATE INDEX ON ip_rib (isWithdrawn);
 CREATE INDEX ON ip_rib (origin_as);
-CREATE INDEX ON ip_rib (prefix_bits);
+--CREATE INDEX ON ip_rib (isWithdrawn);
+--CREATE INDEX ON ip_rib (prefix_bits);
 
 
 -- Table structure for table ip_rib_log
