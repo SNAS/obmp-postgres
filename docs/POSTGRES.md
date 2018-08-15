@@ -32,6 +32,14 @@ should be fast SSD. ZFS can be used on either of them to add compression. The si
 on the number of NLRI's and updates per second.
 
 
+Memory & CPU
+------------
+The size of memory will depend on the type of queries and number of NLRI's.   A good starting point for
+memory is a server with more than 48GB RAM.
+
+The number of vCPU's also varies by the number of concurrent connections and how many threads you use for
+the postgres consumer.  A good starting point is at least 8 vCPU's.   
+
 Postgres and Linux OOM
 ---------------------- 
 
