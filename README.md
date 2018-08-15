@@ -1,5 +1,7 @@
 # OpenBMP PostgreSQL Backend
 
+[![Join the chat at https://gitter.im/OpenBMP/obmp-postgres](https://badges.gitter.im/OpenBMP/obmp-postgres.svg)](https://gitter.im/OpenBMP/obmp-postgres?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 
 The PostgreSQL (PSQL) consumer implements the OpenBMP [Message Bus API](https://github.com/OpenBMP/openbmp/blob/master/docs/MESSAGE_BUS_API.md) **parsed**
 messages to collect and store BMP/BGP data from all collectors, routers, and peers in real-time. 
