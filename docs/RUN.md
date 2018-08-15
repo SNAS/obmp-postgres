@@ -1,49 +1,13 @@
 # Running OpenBMP Postgres App
 
-Tune Linux Swapiness
---------------------
+> Consult the OpenBMP docker postgres [INSTALL](https://github.com/OpenBMP/docker/blob/master/postgres/scripts/install) and
+[RUN](https://github.com/OpenBMP/docker/blob/master/postgres/scripts/run) scripts for
+end-to-end install and run automation details. 
 
-    sysctl -w vm.swappiness=10
-    
-    sync && echo 3 > /proc/sys/vm/drop_caches
-    
-
-Cron jobs
----------
-
-
-### crontab -e
-
-Add and update the following based on your PG settings. 
-
-```cron
-PGUSER=openbmp
-PGPASSWORD=openbmp
-PGHOST=127.0.0.1
-PGDATABASE=openbmp
-
-# Update aggregation table stats
-*/3 * * * *      psql -c "select update_chg_stats('26 minute')"
-
-# Update RPKI
-* */2 * * *      /usr/local/openbmp/rpki_validator.py -u openbmp -p openbmp -s 127.0.0.1:8080 127.0.0.1
-
-# Update IRR
-1 1 * * *        /usr/local/openbmp/gen_whois_route.py -u openbmp -p openbmp 127.0.0.1
-
-# Update peer rib counts
-*/15 * * * *     psql -c "select update_peer_rib_counts()"
-
-# Update origin stats
-21 * * * *       psql -c "select update_global_ip_rib();"
-
-# Purge time series data that is older than desired retention
-* * 1,15 * *     psql -c "SELECT drop_chunks(interval '2 weeks');"
-
-```
+See [OBMP Postgres](POSTGRES.md) documentation for details on setting up Postgres.
 
 Consumer
-----------------
+--------
 
 #### Edit the configuration
 

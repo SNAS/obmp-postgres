@@ -102,9 +102,9 @@ kafka:
     - "openbmp[.]parsed[.]collector"
     - "openbmp[.]parsed[.]router"
     - "openbmp[.]parsed[.]peer"
-    - "openbmp[.]parsed[.]ls.*"
-    - "openbmp[.]parsed[.]bmp_stat"
+    #- "openbmp[.]parsed[.]ls.*"
+    #- "openbmp[.]parsed[.]bmp_stat"
     - "openbmp[.]parsed[.]base_attribute"
-    - "openbmp[.]parsed[.]l3vpn"
+    #- "openbmp[.]parsed[.]l3vpn"
     - "openbmp[.]parsed[.]unicast_prefix"
 

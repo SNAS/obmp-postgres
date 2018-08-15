@@ -339,6 +339,8 @@ CREATE TABLE global_ip_rib (
 CREATE INDEX ON global_ip_rib (recv_origin_as);
 CREATE INDEX ON global_ip_rib USING GIST (prefix inet_ops);
 CREATE INDEX ON global_ip_rib (should_delete);
+CREATE INDEX ON global_ip_rib (rpki_origin_as);
+CREATE INDEX ON global_ip_rib (irr_origin_as);
 
 
 -- Table structure for table info_asn (based on whois)
