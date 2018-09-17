@@ -225,7 +225,52 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Peer past updates counts
+DROP TABLE IF EXISTS stats_peer_update_counts;
+CREATE TABLE stats_peer_update_counts (
+	interval_time           timestamp(6)        without time zone NOT NULL,
+	peer_hash_id            uuid                NOT NULL,
+	advertise_avg           int                 NOT NULL DEFAULT 0,
+	advertise_min           int                 NOT NULL DEFAULT 0,
+	advertise_max           int                 NOT NULL DEFAULT 0,
+	withdraw_avg            int                 NOT NULL DEFAULT 0,
+	withdraw_min            int                 NOT NULL DEFAULT 0,
+	withdraw_max            int                 NOT NULL DEFAULT 0
+) TABLESPACE timeseries;
 
+CREATE UNIQUE INDEX ON stats_peer_update_counts (interval_time,peer_hash_id);
+CREATE INDEX ON stats_peer_update_counts (peer_hash_id);
+
+
+-- convert to timescaledb
+SELECT create_hypertable('stats_peer_update_counts', 'interval_time', chunk_time_interval => interval '1 month');
+
+--
+-- Function snapshots the avg/min/max advertisements and withdrawals for each peer
+--    for the given interval in seconds
+--
+CREATE OR REPLACE FUNCTION update_peer_update_counts(interval_secs int)
+	RETURNS void AS $$
+BEGIN
+     -- Per peer update counts for interval
+     INSERT INTO stats_peer_update_counts (interval_time,peer_hash_id,
+                        advertise_avg,advertise_min,advertise_max,
+                        withdraw_avg,withdraw_min,withdraw_max)
+       SELECT to_timestamp((extract(epoch from now())::bigint / interval_secs)::bigint * interval_secs),
+             peer_hash_id,
+             avg(updates), min(updates), max(updates),
+             avg(withdraws), min(withdraws), max(withdraws)
+         FROM stats_chg_bypeer
+         WHERE interval_time >= now() - (interval_secs::text || ' seconds')::interval
+         GROUP BY peer_hash_id
+       ON CONFLICT (interval_time,peer_hash_id) DO UPDATE SET advertise_avg=excluded.advertise_avg,
+             advertise_min=excluded.advertise_min,
+             advertise_max=excluded.advertise_max,
+             withdraw_avg=excluded.withdraw_avg,
+             withdraw_min=excluded.withdraw_min,
+             withdraw_max=excluded.withdraw_max;
+END;
+$$ LANGUAGE plpgsql;
 --
 -- END
 --

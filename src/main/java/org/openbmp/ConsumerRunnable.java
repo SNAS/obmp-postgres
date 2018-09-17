@@ -15,12 +15,17 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
-import org.openbmp.api.parsed.message.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.openbmp.psqlquery.CollectorQuery;
+import org.openbmp.api.parsed.message.*;
+import org.openbmp.api.parsed.processor.Router;
+import org.openbmp.api.parsed.processor.Peer;
+import org.openbmp.api.parsed.processor.UnicastPrefix;
+import org.openbmp.api.parsed.processor.Collector;
+import org.openbmp.api.parsed.processor.BaseAttribute;
 import org.openbmp.psqlquery.*;
 
+import java.io.Writer;
 import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.*;
@@ -33,10 +38,9 @@ import java.util.regex.Pattern;
  */
 public class ConsumerRunnable implements Runnable {
 
-    private enum ThreadType {
+    public enum ThreadType {
         THREAD_DEFAULT(0),
-        THREAD_ATTRIBUTES(1),
-        THRAED_AS_PATH_ANALYSIS(2);
+        THREAD_ATTRIBUTES(1);
 
         private final int value;
 
@@ -51,6 +55,7 @@ public class ConsumerRunnable implements Runnable {
 
     private static final Logger logger = LogManager.getFormatterLogger(ConsumerRunnable.class.getName());
     private Boolean running;
+    private Boolean nowShutdown;
 
     private ExecutorService executor;
     private Long last_collector_msg_time;
@@ -100,6 +105,10 @@ public class ConsumerRunnable implements Runnable {
      */
     private Map<String, RouterObject> routerMap;
 
+    /**
+     * Consumer queue/buffer of messages to send to writers
+     */
+    private final LinkedBlockingQueue<ConsumerMessageObject> message_queue;
 
     /**
      * Constructor
@@ -108,6 +117,7 @@ public class ConsumerRunnable implements Runnable {
      */
     public ConsumerRunnable(Config cfg) {
 
+        message_queue = new LinkedBlockingQueue<>(cfg.getConsumer_queue_size());
         writer_thread_map = new HashMap<>();
         last_writer_thread_chg_time = 0L;
 
@@ -117,6 +127,7 @@ public class ConsumerRunnable implements Runnable {
         db = new PSQLHandler(cfg);
 
         this.running = true;
+        this.nowShutdown = false;
 
         pausedTopics = new HashSet<>();
         last_paused_time = 0L;
@@ -146,7 +157,6 @@ public class ConsumerRunnable implements Runnable {
 
         // Init the list of threads for each thread type
         for (ThreadType t: ThreadType.values()) {
-
             writer_thread_map.put(t, new ArrayList<WriterObject>());
 
             // Start max writers first
@@ -157,17 +167,40 @@ public class ConsumerRunnable implements Runnable {
     }
 
     /**
+     * Thread safe shutdown
+     */
+    synchronized  public void safe_shutdown() {
+        nowShutdown = true;
+    }
+
+    /**
      * Shutdown this thread and its threads
      */
     public void shutdown() {
-        logger.debug("postgres consumer thread shutting down");
+        logger.info("postgres consumer thread shutting down");
 
-        for (ThreadType t: ThreadType.values()) {
-            List<WriterObject> writers = writer_thread_map.get(t);
-            for (WriterObject obj: writers) {
-                obj.writerThread.shutdown();
+        // Drain message queue
+        logger.info("draining message queue %d", message_queue.size());
+        int i = 0;
+        while (message_queue.size() > 0) {
+            writePendingMessages();
+
+            if (i > 100) {
+                i = 0;
+                logger.info("    ... still draining message queue %d", message_queue.size());
             }
+
+            i++;
         }
+
+        // Shutdown all routers
+        for (ThreadType t: ThreadType.values()) {
+            shutdownWriters(t);
+        }
+
+
+        logger.info("Shutting down consumer");
+        db.disconnect();
 
         if (executor != null) executor.shutdown();
 
@@ -179,9 +212,7 @@ public class ConsumerRunnable implements Runnable {
             logger.warn("Interrupted during shutdown, exiting uncleanly");
         }
 
-        synchronized (running) {
-            running = false;
-        }
+        running = false;
 
         close_consumer();
     }
@@ -265,18 +296,6 @@ public class ConsumerRunnable implements Runnable {
 
         logger.info("Consumer started");
 
-        /** not used
-        for (ThreadType t: ThreadType.values()) {
-            List<WriterObject> writers = writer_thread_map.get(t);
-            for (WriterObject obj: writers) {
-                if (!obj.writerThread.isDbConnected()) {
-                    logger.warn("Ignoring request to run thread since DB connection couldn't be established");
-                    return;
-                }
-            }
-        } */
-
-
         db.connect();
 
         if (connect() == false) {
@@ -287,8 +306,9 @@ public class ConsumerRunnable implements Runnable {
             }
 
             return;
+
         } else {
-            logger.debug("Conected and now consuming messages from kafka");
+            logger.debug("Connected and now consuming messages from kafka");
 
             synchronized (running) {
                 running = true;
@@ -305,7 +325,7 @@ public class ConsumerRunnable implements Runnable {
         // Update router tracking with indexes
         updateRouterMap();
 
-        while (running) {
+        while (nowShutdown == false && running) {
 
             // Subscribe to topics if needed
             if (!topics_all_subscribed) {
@@ -318,7 +338,7 @@ public class ConsumerRunnable implements Runnable {
             } */
 
             try {
-                ConsumerRecords<String, String> records = consumer.poll(100);
+                ConsumerRecords<String, String> records = consumer.poll(10);
 
                 if (records == null || records.count() <= 0)
                     continue;
@@ -350,8 +370,7 @@ public class ConsumerRunnable implements Runnable {
                         collector_msg_count++;
 
                         Collector collector = new Collector(message.getContent());
-                        CollectorQuery collectorQuery = new CollectorQuery(collector.getRowMap());
-                        obj = collector;
+                        CollectorQuery collectorQuery = new CollectorQuery(collector.records);
                         dbQuery = collectorQuery;
 
                         last_collector_msg_time = System.currentTimeMillis();
@@ -387,9 +406,8 @@ public class ConsumerRunnable implements Runnable {
                         logger.trace("Parsing router message");
                         router_msg_count++;
 
-                        Router router = new Router(message.getVersion(), message.getContent());
-                        RouterQuery routerQuery = new RouterQuery(message, router.getRowMap());
-                        obj = router;
+                        Router router = new Router(message.getContent());
+                        RouterQuery routerQuery = new RouterQuery(message.getCollector_hash_id(), router.records);
                         dbQuery = routerQuery;
 
                         if (routerQuery != null) {
@@ -427,9 +445,8 @@ public class ConsumerRunnable implements Runnable {
                         logger.trace("Parsing peer message");
                         peer_msg_count++;
 
-                        Peer peer = new Peer(message.getVersion(), message.getContent());
-                        PeerQuery peerQuery = new PeerQuery(peer.getRowMap());
-                        obj = peer;
+                        Peer peer = new org.openbmp.api.parsed.processor.Peer(message.getContent());
+                        PeerQuery peerQuery = new PeerQuery(peer.records);
                         dbQuery = peerQuery;
 
                         if (peerQuery != null) {
@@ -465,16 +482,14 @@ public class ConsumerRunnable implements Runnable {
 
                         thread_type = ThreadType.THREAD_ATTRIBUTES;
 
-                        BaseAttribute attr_obj = new BaseAttribute(message.getContent());
-                        BaseAttributeQuery baseAttrQuery = new BaseAttributeQuery(attr_obj.getRowMap());
-                        obj = attr_obj;
-                        dbQuery = baseAttrQuery;
+                        BaseAttribute ba = new org.openbmp.api.parsed.processor.BaseAttribute(message.getContent());
+                        dbQuery = new BaseAttributeQuery(ba.records);
 
                         if (!cfg.getDisable_as_path_indexing()) {
                             addBulkQuerytoWriter(record.key(),
                                     ((BaseAttributeQuery) dbQuery).genAsPathAnalysisStatement(),
                                     ((BaseAttributeQuery) dbQuery).genAsPathAnalysisValuesStatement(),
-                                    ThreadType.THRAED_AS_PATH_ANALYSIS);
+                                    ThreadType.THREAD_ATTRIBUTES);
                         }
 
                     } else if ((message.getType() != null && message.getType().equalsIgnoreCase("unicast_prefix"))
@@ -482,8 +497,8 @@ public class ConsumerRunnable implements Runnable {
                         logger.trace("Parsing unicast_prefix message");
                         unicast_prefix_msg_count++;
 
-                        obj = new UnicastPrefix(message.getVersion(), message.getContent());
-                        dbQuery = new UnicastPrefixQuery(obj.getRowMap());
+                        UnicastPrefix up = new org.openbmp.api.parsed.processor.UnicastPrefix(message.getContent());
+                        dbQuery = new UnicastPrefixQuery(up.records);
 
                     } else if ((message.getType() != null && message.getType().equalsIgnoreCase("l3vpn"))
                             || record.topic().equals("openbmp.parsed.l3vpn")) {
@@ -533,7 +548,7 @@ public class ConsumerRunnable implements Runnable {
                     /*
                      * Add query to writer queue
                      */
-                    if (obj != null) {
+                    if (dbQuery != null) {
                         addBulkQuerytoWriter(record.key(), dbQuery.genInsertStatement(),
                                 dbQuery.genValuesStatement(), thread_type);
                     }
@@ -541,6 +556,8 @@ public class ConsumerRunnable implements Runnable {
 
                 // Check writer threads
                 prev_time = checkWriterThreads(prev_time);
+
+                writePendingMessages();
 
                 resume();
 
@@ -550,16 +567,11 @@ public class ConsumerRunnable implements Runnable {
 
             } catch (Exception ex) {
                 logger.warn("kafka consumer exception: ", ex);
-
-                close_consumer();
-
                 running = false;
             }
-
         }
 
         shutdown();
-        logger.debug("PSQL consumer thread finished");
     }
 
     /*
@@ -602,6 +614,31 @@ public class ConsumerRunnable implements Runnable {
         }
     }
 
+    private void resetOneWriter(WriterObject writer, ThreadType type) {
+        logger.info("Resetting writer type %s, draining queue size = %d", type.toString(), writer.writerQueue.size());
+
+        int i = 0;
+        while (writer.writerQueue.size() > 0) {
+            if (i >= 5000) {
+                i = 0;
+                consumer.poll(0);           // NOTE: consumer is paused already.
+
+                logger.info("    ... drain queue writer size is " + writer.writerQueue.size());
+            }
+            ++i;
+
+            try {
+                Thread.sleep(1);
+            } catch (Exception ex) {
+                break;
+            }
+        }
+
+        writer.assigned.clear();
+        writer.above_count = 0;
+        writer.message_count = 0L;
+    }
+
     private void resetWriters(ThreadType thread_type) {
         List<WriterObject> writers = writer_thread_map.get(thread_type);
 
@@ -609,28 +646,24 @@ public class ConsumerRunnable implements Runnable {
 
             logger.info("Thread type " + thread_type + ", draining queues to reset writers");
             for (WriterObject obj : writers) {
-                int i = 0;
-                while (obj.writerQueue.size() > 0) {
-                    if (i >= 5000) {
-                        i = 0;
-                        consumer.poll(0);           // NOTE: consumer is paused already.
-
-                        logger.info("drain queue writer size is " + obj.writerQueue.size());
-                    }
-                    ++i;
-
-                    try {
-                        Thread.sleep(1);
-                    } catch (Exception ex) {
-                        break;
-                    }
-                }
-
-                obj.assigned.clear();
-                obj.above_count = 0;
+                resetOneWriter(obj, thread_type);
             }
         }
     }
+
+    private void shutdownWriters(ThreadType thread_type) {
+        List<WriterObject> writers = writer_thread_map.get(thread_type);
+
+        resetWriters(thread_type);
+
+        if (writers != null) {
+            logger.info("Shutting down all writers for type " + thread_type);
+            for (WriterObject obj : writers) {
+                obj.writerThread.shutdown();
+            }
+        }
+    }
+
 
     private void addWriterThread(ThreadType thread_type) {
         List<WriterObject> writers = writer_thread_map.get(thread_type);
@@ -656,32 +689,39 @@ public class ConsumerRunnable implements Runnable {
             return false;
         }
 
+        last_writer_thread_chg_time = System.currentTimeMillis();
+
         List<WriterObject> writers = writer_thread_map.get(thread_type);
 
-        boolean lowThreads = false;
-        boolean congestedThreads = false;
+        boolean rebalanced = false;
 
         for (WriterObject obj: writers) {
-
             if (obj.above_count > cfg.getWriter_allowed_over_queue_times() && obj.assigned.size() > 1) {
-                congestedThreads = true;
+                rebalanced = true;
+                resetOneWriter(obj, thread_type);
+            } else {
+                obj.message_count = Long.valueOf(obj.writerQueue.size());
             }
-            else if (obj.above_count <= 0 && obj.writerQueue.size() <= 200) {
-                lowThreads = true;
-            }
+
+//            if (obj.above_count > cfg.getWriter_allowed_over_queue_times() && obj.assigned.size() > 1) {
+//                congestedThreads = true;
+//            }
+//            else if (obj.above_count <= 0 && obj.writerQueue.size() <= 200) {
+//                lowThreads = true;
+//            }
         }
 
-        if (congestedThreads && lowThreads) {
-            logger.info("Rebalancing threads for type " + thread_type);
-            resetWriters(thread_type);
+//        if (congestedThreads && lowThreads) {
+//            logger.info("Rebalancing threads for type " + thread_type);
+//            resetWriters(thread_type);
+//
+//            logger.info("DONE rebalancing threads for type " + thread_type);
+//
+//            last_writer_thread_chg_time = System.currentTimeMillis();
+//            return true;
+//        }
 
-            logger.info("DONE rebalancing threads for type " + thread_type);
-
-            last_writer_thread_chg_time = System.currentTimeMillis();
-            return true;
-        }
-
-        return false;
+        return rebalanced;
     }
 
     private void delWriterThread(ThreadType thread_type) {
@@ -722,8 +762,14 @@ public class ConsumerRunnable implements Runnable {
                 else {
 
                     for (WriterObject obj : writers) {
+                        logger.debug("---->>> Writer %s %d: assigned = %d, queue = %d, above_count = %d, messages = %d",
+                                t.toString(), i,
+                                obj.assigned.size(),
+                                obj.writerQueue.size(),
+                                obj.above_count,
+                                obj.message_count);
 
-                        if (obj.writerQueue.size() > 10000) {
+                        if (obj.writerQueue.size() > cfg.getWriter_queue_size() * 0.75) {
 
                             if (obj.above_count > cfg.getWriter_allowed_over_queue_times()) {
 
@@ -764,7 +810,7 @@ public class ConsumerRunnable implements Runnable {
                                         writers.size());
                             }
 
-                        } else if (obj.writerQueue.size() < 100) {
+                        } else if (obj.writerQueue.size() < (cfg.getWriter_queue_size() * .20)) {
                             obj.above_count = 0;
                             threadsBelowThreshold++;
                         }
@@ -774,7 +820,6 @@ public class ConsumerRunnable implements Runnable {
 
                     if (threadsBelowThreshold >= writers.size()) {
                         delWriterThread(t);
-                        break;
                     }
                 }
             }
@@ -786,56 +831,154 @@ public class ConsumerRunnable implements Runnable {
         }
     }
 
-    private void sendToWriter(String key, Map<String, String> query, ThreadType thread_type) {
-        List<WriterObject> writers = writer_thread_map.get(thread_type);
+    /**
+     * Gets the writer object for message object
+     *
+     *      A new writer will be assigned if not already assigned
+     *
+     * @param msg           Consumer message object
+     *
+     * @return  Returns writer object or null if error
+     */
+    private WriterObject getWriter(ConsumerMessageObject msg) {
+        WriterObject cur_obj = null;
+
+        List<WriterObject> writers = writer_thread_map.get(msg.thread_type);
 
         if (writers != null) {
-            boolean newly_assigned = true;
 
-            WriterObject found_obj= null;
+            // Choose and distribute to thread based on thread type
+            switch (msg.thread_type) {
 
-            for (WriterObject obj: writers) {
-                if (!obj.assigned.containsKey(key)) {
-                    if (found_obj == null) {
-                        found_obj = obj;
+// - works well but causes deadlocks and a lot of waiting on shared locks
+//                case THREAD_ATTRIBUTES:
+//                case THRAED_AS_PATH_ANALYSIS: {
+//                    /*
+//                     * Order is not needed, choose the least congested thread
+//                     */
+//                    for (WriterObject obj : writers) {
+//                        if (cur_obj == null) {
+//                            cur_obj = obj;
+//
+//                        } else if (obj.writerQueue.size() < cur_obj.writerQueue.size()) {
+//                            cur_obj = obj;
+//                        }
+//                    }
+//                    break;
+//                }
+
+                default: {
+                    /*
+                     * Order is important for state data.  Sticky load balance
+                     *      Enusring the same thread writes/updates the same peer data
+                     *      reduces deadlocks/shared lock waits
+                     */
+                    for (WriterObject obj : writers) {
+
+                        if (obj.assigned.containsKey(msg.key)) {
+                            obj.message_count++;
+                            // Found existing writer - use it instead of finding a new one
+                            return obj;
+                        }
+
+                        else {
+                            // Reset message count on rebalance
+                            if (obj.assigned.size() == 0) {
+                                obj.message_count = 0L;
+                            }
+
+                            // Load balance/distribute by finding a thread to assign
+                            if (cur_obj == null) {
+                                cur_obj = obj;
+
+                            } else if (cur_obj.assigned.size() != 0
+                                    && (obj.assigned.size() == 0
+                                        || (obj.writerQueue.size() < 1000 && cur_obj.writerQueue.size() > 1000)
+                                        || cur_obj.message_count > obj.message_count)) {
+                                cur_obj = obj;
+                            }
+                        }
                     }
-                    else if ((found_obj.writerQueue.size() > obj.writerQueue.size()
-                            && obj.writerQueue.size() < 2000)
-                            || (found_obj.assigned.size() > obj.assigned.size())) {
-                        found_obj = obj;
-                    }
-                }
-                else {
-                    newly_assigned = false;
-                    found_obj = obj;
+
+                    // If we made it this far, then the cur_obj is a newly assigned writer for this key
+                    cur_obj.assigned.put(msg.key, 1);
+
                     break;
                 }
-
-
             }
-
-            if (newly_assigned) {
-                found_obj.assigned.put(key, 1);
-            }
-
-            int i = 0;
-            while (found_obj.writerQueue.offer(query) == false) {
-                if (i >= 1000) {
-//                    logger.info("send to writer congested, waiting. queue size: " + found_obj.writerQueue.size());
-                    i = 0;
-                    consumer.poll(0);           // NOTE: consumer is paused already.
-                }
-                ++i;
-
-                try {
-                    Thread.sleep(1);
-                } catch (Exception ex) {
-                    break;
-                }
-            }
-
         }
 
+        cur_obj.message_count++;
+
+        return cur_obj;
+    }
+
+    /**
+     * Write all pending messages to writer threads.  This method is where the actual
+     *      message is sent to the writer.
+     */
+    private void writePendingMessages() {
+        Set<WriterRunnable> busy_writers = new HashSet<>();
+
+        /*
+         * Process in FIFO order all pending messages
+         */
+        try {
+            int i = message_queue.size();
+
+            ConsumerMessageObject qmsg = message_queue.poll(0, TimeUnit.MILLISECONDS);
+
+            while (qmsg != null && i > 0) {
+                WriterObject wobj = getWriter(qmsg);
+
+                // Skip any writers that are currently busy by putting the message back
+                if (busy_writers.contains(wobj.writerThread) == true) {
+                    message_queue.put(qmsg);
+                }
+
+                // Try to send to writer
+                else if ((wobj.writerQueue.offer(qmsg.query)) == false) {
+
+//                    if (message_queue.size() > 5000)
+//                        logger.info("writer queue full thread type %s msg_queue: %d",
+//                                qmsg.thread_type.toString(), message_queue.size());
+
+                    // failed, so mark this thread as busy
+                    message_queue.put(qmsg);
+                    busy_writers.add(wobj.writerThread);
+                }
+
+                // Get next message and send if possible
+                i--;
+
+                if (i > 0) {
+                    qmsg = message_queue.poll(0, TimeUnit.MILLISECONDS);
+                }
+
+            }
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void addToMsgQueue(ConsumerMessageObject msg) {
+        try {
+            // Add msg to queue - block if needed
+            while (message_queue.offer(msg) == false) {
+                //logger.warn("message queue full: %d", message_queue.size());
+
+                consumer.poll(0);                       // NOTE: consumer is paused already.
+
+                writePendingMessages();
+                Thread.sleep(10);
+            }
+
+            //writePendingMessages();
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -859,7 +1002,13 @@ public class ConsumerRunnable implements Runnable {
                 query.put("value", values);
 
                 // block if space is not available
-                sendToWriter(key, query, thread_type);
+                ConsumerMessageObject msg = new ConsumerMessageObject();
+                msg.key = key;
+                msg.query = query;
+                msg.thread_type = thread_type;
+
+
+                addToMsgQueue(msg);
             }
         } catch (Exception ex) {
             logger.info("Get values Exception: ", ex);
@@ -907,7 +1056,12 @@ public class ConsumerRunnable implements Runnable {
     }
 
     public synchronized boolean isRunning() { return running; }
+
     public synchronized BigInteger getMessageCount() { return messageCount; }
+
+    public synchronized Integer getConsumerQueueSize() {
+        return message_queue.size();
+    }
     public synchronized Integer getQueueSize() {
         Integer qSize = 0;
 

@@ -13,13 +13,16 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.openbmp.RouterObject;
+import org.openbmp.api.parsed.message.CollectorPojo;
 import org.openbmp.api.parsed.message.MsgBusFields;
 
 public class CollectorQuery extends Query{
-	
-	public CollectorQuery(List<Map<String, Object>> rowMap){
+    private final List<CollectorPojo> records;
+
+
+    public CollectorQuery(List<CollectorPojo> records){
 		
-		this.rowMap = rowMap;
+		this.records = records;
 	}
 	
     /**
@@ -46,16 +49,20 @@ public class CollectorQuery extends Query{
     public String genValuesStatement() {
         StringBuilder sb = new StringBuilder();
 
-        for (int i=0; i < rowMap.size(); i++) {
+        int i = 0;
+        for (CollectorPojo pojo : records) {
             if (i > 0)
                 sb.append(',');
-            sb.append('(');
-            sb.append("'" + lookupValue(MsgBusFields.HASH, i) + "'::uuid,");
-            sb.append((((String)lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("stopped") ? "'down'" : "'up'") + "::opstate,");
-            sb.append("'" + lookupValue(MsgBusFields.ADMIN_ID, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.ROUTERS, i) + "',");
-            sb.append(lookupValue(MsgBusFields.ROUTER_COUNT, i) + ",");
-            sb.append("'" + lookupValue(MsgBusFields.TIMESTAMP, i) + "'::timestamp");
+
+            i++;
+
+            sb.append("('");
+            sb.append(pojo.getHash()); sb.append("'::uuid,");
+            sb.append(pojo.getAction().equalsIgnoreCase("stopped") ? "'down'::opstate," : "'up'::opstate,");
+            sb.append('\''); sb.append(pojo.getAdmin_id()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getRouter_list()); sb.append("',");
+            sb.append(pojo.getRouter_count()); sb.append(',');
+            sb.append('\''); sb.append(pojo.getTimestamp()); sb.append("'::timestamp");
             sb.append(')');
         }
 
@@ -74,16 +81,19 @@ public class CollectorQuery extends Query{
         StringBuilder router_sql_in_list = new StringBuilder();
         router_sql_in_list.append("(");
 
-        for (int i = 0; i < rowMap.size(); i++) {
+        int i = 0;
+        for (CollectorPojo pojo: records) {
 
             String action = (String) lookupValue(MsgBusFields.ACTION, i);
 
             if (i > 0 && sb.length() > 0)
                 sb.append(';');
 
-            if (action.equalsIgnoreCase("started") || action.equalsIgnoreCase("stopped")) {
+            i++;
+
+            if (pojo.getAction().equalsIgnoreCase("started") || pojo.getAction().equalsIgnoreCase("stopped")) {
                 sb.append("UPDATE routers SET state = 'down' WHERE collector_hash_id = '");
-                sb.append(lookupValue(MsgBusFields.HASH, i) + "'");
+                sb.append(pojo.getHash()); sb.append('\'');
             }
 
             else { // heartbeat or changed

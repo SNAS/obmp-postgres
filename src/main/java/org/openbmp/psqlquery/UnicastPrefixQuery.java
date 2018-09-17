@@ -16,14 +16,15 @@ import java.util.Set;
 import org.openbmp.RouterObject;
 import org.openbmp.api.helpers.IpAddr;
 import org.openbmp.api.parsed.message.MsgBusFields;
+import org.openbmp.api.parsed.message.UnicastPrefixPojo;
 
 
+public class UnicastPrefixQuery extends Query {
+    private final List<UnicastPrefixPojo> records;
 
-public class UnicastPrefixQuery extends Query{
-
-	public UnicastPrefixQuery(List<Map<String, Object>> rowMap){
+	public UnicastPrefixQuery(List<UnicastPrefixPojo> records){
 		
-		this.rowMap = rowMap;
+		this.records = records;
 	}
 	
 	
@@ -64,47 +65,52 @@ public class UnicastPrefixQuery extends Query{
     public String genValuesStatement() {
         StringBuilder sb = new StringBuilder();
 
-        for (int i=0; i < rowMap.size(); i++) {
+        int i = 0;
+        for (UnicastPrefixPojo pojo: records) {
 
             if (i > 0)
                 sb.append(',');
 
-            sb.append('(');
-            sb.append("'" + lookupValue(MsgBusFields.HASH, i) + "'::uuid,");
-            sb.append("'" + lookupValue(MsgBusFields.PEER_HASH, i) + "'::uuid,");
+            i++;
 
-            if ( ((String)lookupValue(MsgBusFields.BASE_ATTR_HASH, i)).length() >= 32)
-                sb.append("'" + lookupValue(MsgBusFields.BASE_ATTR_HASH, i) + "'::uuid,");
-            else
+            sb.append("('");
+            sb.append(pojo.getHash()); sb.append("'::uuid,");
+            sb.append('\''); sb.append(pojo.getPeer_hash()); sb.append("'::uuid,");
+
+            if (pojo.getBase_attr_hash().length() != 0) {
+                sb.append('\'');
+                sb.append(pojo.getBase_attr_hash());
+                sb.append("'::uuid,");
+            } else {
                 sb.append("null::uuid,");
+            }
 
-            sb.append(lookupValue(MsgBusFields.IS_IPV4, i) + "::boolean,");
+            sb.append(pojo.getIPv4()); sb.append("::boolean,");
 
-            sb.append(lookupValue(MsgBusFields.ORIGIN_AS, i) + ",");
+            sb.append(pojo.getOrigin_asn()); sb.append(',');
 
-            //sb.append("'" + lookupValue(MsgBusFields.PREFIX, i) + "'::inet,");
-            sb.append("'" + lookupValue(MsgBusFields.PREFIX, i) + "/");
-            sb.append(lookupValue(MsgBusFields.PREFIX_LEN, i));
+            sb.append('\''); sb.append(pojo.getPrefix()); sb.append('/');
+            sb.append(pojo.getPrefix_len());
             sb.append("'::inet,");
 
-            sb.append(lookupValue(MsgBusFields.PREFIX_LEN, i) + ",");
+            sb.append(pojo.getPrefix_len()); sb.append(',');
 
             try {
-                sb.append("'" + IpAddr.getIpBits((String) lookupValue(MsgBusFields.PREFIX, i)).substring(0, (Integer) lookupValue(MsgBusFields.PREFIX_LEN, i)) + "',");
+                sb.append('\''); sb.append(IpAddr.getIpBits(pojo.getPrefix()).substring(0, pojo.getPrefix_len()));
+                sb.append("',");
             } catch (StringIndexOutOfBoundsException e) {
-
                 //TODO: Fix getIpBits to support mapped IPv4 addresses in IPv6 (::ffff:ipv4)
                 System.out.println("IP prefix failed to convert to bits: " +
-                        (String) lookupValue(MsgBusFields.PREFIX, i) + " len: " + (Integer) lookupValue(MsgBusFields.PREFIX_LEN, i));
+                        pojo.getPrefix() + " len: " + pojo.getPrefix_len());
                 sb.append("'',");
             }
 
-            sb.append("'" + lookupValue(MsgBusFields.TIMESTAMP, i) + "'::timestamp,");
-            sb.append((((String)lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("del") ? "true" : "false") + ",");
-            sb.append(lookupValue(MsgBusFields.PATH_ID, i) + ",");
-            sb.append("'" + lookupValue(MsgBusFields.LABELS, i) + "',");
-            sb.append(lookupValue(MsgBusFields.ISPREPOLICY, i) + "::boolean,");
-            sb.append(lookupValue(MsgBusFields.IS_ADJ_RIB_IN, i) + "::boolean");
+            sb.append('\''); sb.append(pojo.getTimestamp()); sb.append("'::timestamp,");
+            sb.append(pojo.getWithdrawn()); sb.append(',');
+            sb.append(pojo.getPath_id()); sb.append(',');
+            sb.append('\''); sb.append(pojo.getLabels()); sb.append("',");
+            sb.append(pojo.getPrePolicy()); sb.append("::boolean,");
+            sb.append(pojo.getAdjRibIn()); sb.append("::boolean");
 
             sb.append(')');
         }

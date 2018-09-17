@@ -13,12 +13,14 @@ import java.util.List;
 import java.util.Map;
 
 import org.openbmp.api.parsed.message.MsgBusFields;
+import org.openbmp.api.parsed.message.PeerPojo;
 
 public class PeerQuery extends Query{
-	
-	public PeerQuery(List<Map<String, Object>> rowMap){
+    private final List<PeerPojo> records;
+
+    public PeerQuery(List<PeerPojo> records){
 		
-		this.rowMap = rowMap;
+		this.records = records;
 	}
 	
 	
@@ -55,50 +57,61 @@ public class PeerQuery extends Query{
     public String genValuesStatement() {
         StringBuilder sb = new StringBuilder();
 
-        for (int i=0; i < rowMap.size(); i++) {
+        int i = 0;
+        for (PeerPojo pojo : records) {
             if (i > 0)
                 sb.append(',');
 
+            i++;
+
             sb.append('(');
-            sb.append("'" + lookupValue(MsgBusFields.HASH, i) + "'::uuid,");
-            sb.append("'" + lookupValue(MsgBusFields.ROUTER_HASH, i) + "'::uuid,");
-            sb.append("'" + lookupValue(MsgBusFields.PEER_RD, i) + "',");
-            sb.append(lookupValue(MsgBusFields.IS_IPV4, i) + "::boolean,");
-            sb.append("'" + lookupValue(MsgBusFields.REMOTE_IP, i) + "'::inet,");
-            sb.append("'" + lookupValue(MsgBusFields.NAME, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.REMOTE_BGP_ID, i) + "'::inet,");
-            sb.append(lookupValue(MsgBusFields.REMOTE_ASN, i) + ",");
 
-            sb.append("'" + (((String)lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("up") ? "up" : "down") + "',");
+            sb.append('\''); sb.append(pojo.getHash()); sb.append("'::uuid,");
+            sb.append('\''); sb.append(pojo.getRouter_hash()); sb.append("'::uuid,");
+            sb.append('\''); sb.append(pojo.getPeer_rd()); sb.append("',");
+            sb.append(pojo.getIPv4()); sb.append("::boolean,");
+            sb.append('\''); sb.append(pojo.getPeer_ip()); sb.append("'::inet,");
+            sb.append('\''); sb.append(pojo.getName()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getPeer_bgp_id()); sb.append("'::inet,");
+            sb.append(pojo.getPeer_asn()); sb.append(',');
 
-            sb.append(lookupValue(MsgBusFields.IS_L3VPN, i) + "::boolean,");
-            sb.append("'" + lookupValue(MsgBusFields.TIMESTAMP, i) + "'::timestamp,");
-            sb.append(lookupValue(MsgBusFields.ISPREPOLICY, i) + "::boolean,");
+            sb.append(pojo.getAction().equalsIgnoreCase("up") ? "'up'" : "'down'"); sb.append(',');
 
-            if (((String)lookupValue(MsgBusFields.LOCAL_IP, i)).length() > 2)
-                sb.append("'" + lookupValue(MsgBusFields.LOCAL_IP, i) + "'::inet,");
-            else
+            sb.append(pojo.getL3VPN()); sb.append("::boolean,");
+            sb.append('\''); sb.append(pojo.getTimestamp()); sb.append("'::timestamp,");
+            sb.append(pojo.getPrePolicy()); sb.append("::boolean,");
+
+            if (pojo.getLocal_ip().length() > 2) {
+                sb.append('\'');
+                sb.append(pojo.getLocal_ip());
+                sb.append("'::inet,");
+            } else {
                 sb.append("null,");
+            }
 
-            if (((String)lookupValue(MsgBusFields.LOCAL_BGP_ID, i)).length() > 2)
-                sb.append("'" + lookupValue(MsgBusFields.LOCAL_BGP_ID, i) + "'::inet,");
-            else
+            if (pojo.getLocal_bgp_id().length() > 2) {
+                sb.append('\'');
+                sb.append(pojo.getLocal_bgp_id());
+                sb.append("'::inet,");
+            } else {
                 sb.append("null,");
+            }
 
-            sb.append(lookupValue(MsgBusFields.LOCAL_PORT, i) + ",");
-            sb.append(lookupValue(MsgBusFields.ADV_HOLDDOWN, i) + ",");
-            sb.append(lookupValue(MsgBusFields.LOCAL_ASN, i) + ",");
-            sb.append(lookupValue(MsgBusFields.REMOTE_PORT, i) + ",");
-            sb.append(lookupValue(MsgBusFields.REMOTE_HOLDDOWN, i) + ",");
-            sb.append("'" + lookupValue(MsgBusFields.ADV_CAP, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.RECV_CAP, i) + "',");
-            sb.append(lookupValue(MsgBusFields.BMP_REASON, i) + ",");
-            sb.append(lookupValue(MsgBusFields.BGP_ERROR_CODE, i) + ",");
-            sb.append(lookupValue(MsgBusFields.BGP_ERROR_SUB_CODE, i) + ",");
-            sb.append("'" + lookupValue(MsgBusFields.ERROR_TEXT, i) + "',");
-            sb.append(lookupValue(MsgBusFields.IS_LOCRIB, i) + "::boolean,");
-            sb.append(lookupValue(MsgBusFields.IS_LOCRIB_FILTERED, i) + "::boolean,");
-            sb.append("'" + lookupValue(MsgBusFields.TABLE_NAME, i) + "'");
+            sb.append(pojo.getLocal_port()); sb.append(',');
+            sb.append(pojo.getLocal_holddown()); sb.append(',');
+            sb.append(pojo.getLocal_asn()); sb.append(',');
+            sb.append(pojo.getPeer_port()); sb.append(',');
+            sb.append(pojo.getPeer_holddown()); sb.append(',');
+            sb.append('\''); sb.append(pojo.getAdvertised_cap()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getReceived_cap()); sb.append("',");
+            sb.append(pojo.getBmp_down_reason()); sb.append(',');
+            sb.append(pojo.getBgp_error_code()); sb.append(',');
+            sb.append(pojo.getBgp_error_subcode()); sb.append(',');
+            sb.append('\''); sb.append(pojo.getBgp_error_text()); sb.append("',");
+            sb.append(pojo.getLocRib()); sb.append("::boolean,");
+            sb.append(pojo.getLocalRibFiltered()); sb.append("::boolean,");
+            sb.append('\''); sb.append(pojo.getTable_name()); sb.append('\'');
+
             sb.append(')');
         }
 
@@ -118,14 +131,14 @@ public class PeerQuery extends Query{
     public List<String> genRibPeerUpdate() {
         List<String> result = new ArrayList<>();
 
-        for (int i=0; i < rowMap.size(); i++) {
+        for (PeerPojo pojo : records) {
             StringBuilder sb = new StringBuilder();
 
             //sb.append("UPDATE ip_rib SET isWithdrawn = true WHERE peer_hash_id = '");
             sb.append("DELETE FROM ip_rib WHERE peer_hash_id = '");
-            sb.append(lookupValue(MsgBusFields.HASH, i));
+            sb.append(pojo.getHash());
             sb.append("' AND timestamp < '");
-            sb.append(rowMap.get(i).get(MsgBusFields.TIMESTAMP.getName()) + "'");
+            sb.append(pojo.getTimestamp()); sb.append('\'');
 
 //            sb.append("; UPDATE ls_nodes SET isWithdrawn = True WHERE peer_hash_id = '");
 //            sb.append(lookupValue(MsgBusFields.HASH, i));

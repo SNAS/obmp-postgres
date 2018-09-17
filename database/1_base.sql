@@ -159,7 +159,7 @@ CREATE TABLE bgp_peers (
 	isIPv4                  boolean             NOT NULL DEFAULT true,
 	peer_addr               inet                NOT NULL,
 	name                    varchar(200),
-	peer_bgp_id             inet                NOT NULL,
+	peer_bgp_id             inet,
 	peer_as                 bigint              NOT NULL,
 	state                   opState             NOT NULL DEFAULT 'down',
 	isL3VPNpeer             boolean             NOT NULL DEFAULT false,
@@ -270,6 +270,11 @@ CREATE TABLE base_attrs (
 CREATE INDEX ON base_attrs (origin_as);
 CREATE INDEX ON base_attrs (as_path_count);
 CREATE INDEX ON base_attrs (as_path);
+CREATE INDEX ON base_attrs (peer_hash_id);
+
+ALTER TABLE base_attrs SET (autovacuum_vacuum_cost_limit = 1000);
+ALTER TABLE base_attrs SET (autovacuum_vacuum_cost_delay = 10);
+
 
 -- Table structure for table rib
 --    https://blog.dbi-services.com/hash-partitioning-in-postgresql-11/--
@@ -300,6 +305,10 @@ CREATE INDEX ON ip_rib USING GIST (prefix inet_ops);
 CREATE INDEX ON ip_rib (origin_as);
 --CREATE INDEX ON ip_rib (isWithdrawn);
 --CREATE INDEX ON ip_rib (prefix_bits);
+
+ALTER TABLE ip_rib SET (autovacuum_vacuum_cost_limit = 1000);
+ALTER TABLE ip_rib SET (autovacuum_vacuum_cost_delay = 10);
+
 
 
 -- Table structure for table ip_rib_log
@@ -341,6 +350,9 @@ CREATE INDEX ON global_ip_rib USING GIST (prefix inet_ops);
 CREATE INDEX ON global_ip_rib (should_delete);
 CREATE INDEX ON global_ip_rib (rpki_origin_as);
 CREATE INDEX ON global_ip_rib (irr_origin_as);
+
+ALTER TABLE global_ip_rib SET (autovacuum_vacuum_cost_limit = 1000);
+ALTER TABLE global_ip_rib SET (autovacuum_vacuum_cost_delay = 10);
 
 
 -- Table structure for table info_asn (based on whois)
@@ -390,6 +402,10 @@ CREATE TABLE as_path_analysis (
 
 CREATE INDEX ON as_path_analysis (asn_left);
 CREATE INDEX ON as_path_analysis (asn_right);
+
+ALTER TABLE as_path_analysis SET (autovacuum_vacuum_cost_limit = 1000);
+ALTER TABLE as_path_analysis SET (autovacuum_vacuum_cost_delay = 10);
+
 
 -- Alerts table for security monitoring
 DROP TABLE IF EXISTS alerts;

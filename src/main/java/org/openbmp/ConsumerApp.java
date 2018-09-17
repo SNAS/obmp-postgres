@@ -40,10 +40,24 @@ public class ConsumerApp
     }
 
     public void shutdown() {
-        logger.debug("Shutting down MySQL consumer app");
+        logger.info("Shutting down Postgres consumer app");
 
         for (ConsumerRunnable thr: consumerThreads) {
-            thr.shutdown();
+            thr.safe_shutdown();
+        }
+
+        // Wait for consumers to finish
+        for (ConsumerRunnable consumer: consumerThreads) {
+
+            while (consumer.isRunning()) {
+                logger.debug("Consumer still running, waiting for it to shutdown");
+
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
         }
 
         if (executor != null) executor.shutdown();
@@ -85,6 +99,12 @@ public class ConsumerApp
         // start the consumer app
         ConsumerApp psqlApp = new ConsumerApp(cfg);
 
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            public void run() {
+                this.setName("psqlApp");
+                psqlApp.shutdown();
+            }
+        });
 
         psqlApp.run();
 
@@ -93,12 +113,13 @@ public class ConsumerApp
             // Give some time to connect
             Thread.sleep(5000);
 
-            while (true) {
+            boolean run = true;
+            while (run) {
                 for (ConsumerRunnable consumer: psqlApp.consumerThreads) {
                     if (! consumer.isRunning()) {
                         logger.error("Consumer is not running, exiting");
                         Thread.sleep(1000);
-                        System.exit(1);
+                        run = false;
                     }
                 }
 
@@ -106,8 +127,9 @@ public class ConsumerApp
                     Thread.sleep(cfg.getStatsInterval() * 1000);
 
                     for (int i = 0; i < psqlApp.consumerThreads.size(); i++ ) {
-                        logger.info("-- STATS --   thread: %d  read: %-10d  queue: %-10d",
+                        logger.info("-- STATS --   thread: %d  read: %-10d  consumer_queue: %-10d writer_queues: %-10d",
                                     i, psqlApp.consumerThreads.get(i).getMessageCount(),
+                                    psqlApp.consumerThreads.get(i).getConsumerQueueSize(),
                                     psqlApp.consumerThreads.get(i).getQueueSize());
                         logger.info("           collector messages: %d",
                                 psqlApp.consumerThreads.get(i).getCollector_msg_count());
@@ -121,7 +143,7 @@ public class ConsumerApp
                                 psqlApp.consumerThreads.get(i).getBase_attribute_msg_count());
                         logger.info("      unicast prefix messages: %d",
                                 psqlApp.consumerThreads.get(i).getUnicast_prefix_msg_count());
-                        logger.info("      l3vpn prefix messages: %d",
+                        logger.info("        l3vpn prefix messages: %d",
                                 psqlApp.consumerThreads.get(i).getL3vpn_prefix_msg_count());
                         logger.info("             LS node messages: %d",
                                 psqlApp.consumerThreads.get(i).getLs_node_msg_count());
@@ -136,7 +158,6 @@ public class ConsumerApp
                 }
             }
         } catch (InterruptedException ie) {
-
         }
 
         psqlApp.shutdown();

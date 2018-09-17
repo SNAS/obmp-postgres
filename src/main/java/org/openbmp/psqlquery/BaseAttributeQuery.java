@@ -14,13 +14,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.openbmp.api.parsed.message.BaseAttributePojo;
 import org.openbmp.api.parsed.message.MsgBusFields;
 
 public class BaseAttributeQuery extends Query{
-	
-	public BaseAttributeQuery(List<Map<String, Object>> rowMap){
+	private final List<BaseAttributePojo> records;
+
+	public BaseAttributeQuery(List<BaseAttributePojo> records){
 		
-		this.rowMap = rowMap;
+		this.records = records;
 	}
 	
     /**
@@ -53,35 +55,40 @@ public class BaseAttributeQuery extends Query{
     public String genValuesStatement() {
         StringBuilder sb = new StringBuilder();
 
-        for (int i=0; i < rowMap.size(); i++) {
+        int i = 0;
+        for (BaseAttributePojo pojo: records) {
             if (i > 0)
                 sb.append(',');
 
+            i++;
+
             sb.append('(');
-            sb.append("'" + lookupValue(MsgBusFields.HASH, i) + "'::uuid,");
-            sb.append("'" + lookupValue(MsgBusFields.PEER_HASH, i) + "'::uuid,");
-            sb.append("'" + lookupValue(MsgBusFields.ORIGIN, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.AS_PATH, i) + "',");
-            sb.append(lookupValue(MsgBusFields.ORIGIN_AS, i) + ",");
-            sb.append("'" + lookupValue(MsgBusFields.NEXTHOP, i) + "'::inet,");
-            sb.append(lookupValue(MsgBusFields.MED, i) + ",");
-            sb.append(lookupValue(MsgBusFields.LOCAL_PREF, i) + ",");
-            sb.append(lookupValue(MsgBusFields.ISATOMICAGG, i) + "::boolean,");
-            sb.append("'" + lookupValue(MsgBusFields.AGGREGATOR, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.COMMUNITY_LIST, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.EXT_COMMUNITY_LIST, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.LARGE_COMMUNITY_LIST, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.CLUSTER_LIST, i) + "',");
+            sb.append('\''); sb.append(pojo.getHash()); sb.append("'::uuid,");
+            sb.append('\''); sb.append(pojo.getPeer_hash()); sb.append("'::uuid,");
+            sb.append('\''); sb.append(pojo.getOrigin()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getAs_path()); sb.append("',");
+            sb.append(pojo.getOrigin_asn()); sb.append(',');
+            sb.append('\''); sb.append(pojo.getNext_hop()); sb.append("'::inet,");
+            sb.append(pojo.getMed()); sb.append(',');
+            sb.append(pojo.getLocal_pref()); sb.append(',');
+            sb.append(pojo.getAtomicAggregate()); sb.append("::boolean,");
+            sb.append('\''); sb.append(pojo.getAggregator()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getCommunity_list()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getExt_community_list()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getLarge_community_list()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getCluster_list()); sb.append("',");
 
 
-            if (((String)lookupValue(MsgBusFields.ORIGINATOR_ID, i)).length() > 0)
-                sb.append("'" + lookupValue(MsgBusFields.ORIGINATOR_ID, i) + "'::inet,");
-            else
+            if (pojo.getOriginator_id().length() > 0) {
+                sb.append('\'');
+                sb.append(pojo.getOriginator_id()); sb.append("'::inet,");
+            } else {
                 sb.append("null::inet,");
+            }
 
-            sb.append(lookupValue(MsgBusFields.AS_PATH_COUNT, i) + ",");
-            sb.append(lookupValue(MsgBusFields.IS_NEXTHOP_IPV4, i) + "::boolean,");
-            sb.append("'" + lookupValue(MsgBusFields.TIMESTAMP, i) + "'::timestamp");
+            sb.append(pojo.getAs_path_len()); sb.append(',');
+            sb.append(pojo.getNextHopIpv4()); sb.append("::boolean,");
+            sb.append('\''); sb.append(pojo.getTimestamp()); sb.append("'::timestamp");
             sb.append(')');
         }
 
@@ -115,9 +122,9 @@ public class BaseAttributeQuery extends Query{
          * Iterate through the AS Path and extract out the left and right ASN for each AS within
          *     the AS PATH
          */
-        for (int i=0; i < rowMap.size(); i++) {
+        for (BaseAttributePojo pojo: records) {
 
-            String as_path_str = ((String)lookupValue(MsgBusFields.AS_PATH, i)).trim();
+            String as_path_str = pojo.getAs_path().trim();
             as_path_str = as_path_str.replaceAll("[{}]", "");
             String[] as_path = as_path_str.split(" ");
 
@@ -125,25 +132,25 @@ public class BaseAttributeQuery extends Query{
             Long right_asn = 0L;
             Long asn = 0L;
 
-            for (int i2=0; i2 < as_path.length; i2++) {
-                if (as_path[i2].length() <= 0)
+            for (int i=0; i < as_path.length; i++) {
+                if (as_path[i].length() <= 0)
                     break;
 
                 try {
-                    asn = Long.valueOf(as_path[i2]);
+                    asn = Long.valueOf(as_path[i]);
                 } catch (NumberFormatException e) {
                     e.printStackTrace();
                     break;
                 }
 
                 if (asn > 0 ) {
-                    if (i2+1 < as_path.length) {
+                    if (i+1 < as_path.length) {
 
-                        if (as_path[i2 + 1].length() <= 0)
+                        if (as_path[i + 1].length() <= 0)
                             break;
 
                         try {
-                            right_asn = Long.valueOf(as_path[i2 + 1]);
+                            right_asn = Long.valueOf(as_path[i + 1]);
 
                         } catch (NumberFormatException e) {
                             e.printStackTrace();
@@ -154,13 +161,25 @@ public class BaseAttributeQuery extends Query{
                             continue;
                         }
 
-                        String isPeeringAsn = (i2 == 0 || i2 == 1) ? "1" : "0";
-                        values.add("(" + asn + "," + left_asn + "," + right_asn + "," + isPeeringAsn + "::boolean)");
+                        String isPeeringAsn = (i == 0 || i == 1) ? "1" : "0";
 
+                        StringBuilder vsb = new StringBuilder();
+                        vsb.append('(');
+                        vsb.append(asn); vsb.append(',');
+                        vsb.append(left_asn); vsb.append(',');
+                        vsb.append(right_asn); vsb.append(',');
+                        vsb.append(isPeeringAsn); vsb.append("::boolean)");
+                        values.add(vsb.toString());
 
                     } else {
                         // No more left in path - Origin ASN
-                          values.add("(" + asn + "," + left_asn + ",0,false)");
+                        StringBuilder vsb = new StringBuilder();
+                        vsb.append('(');
+                        vsb.append(asn); vsb.append(',');
+                        vsb.append(left_asn);
+                        vsb.append(",0,false)");
+                        values.add(vsb.toString());
+
                         break;
                     }
 

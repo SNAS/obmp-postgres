@@ -22,9 +22,8 @@ base:
   #
   #  Following types are implemented.
   #   - Default
-  #   - as_path_analysis
   #   - base attributes
-  writer_max_threads_per_type: 3
+  writer_max_threads_per_type: 6
 
   # Number of consecutive times the writer queue (per type) can sustain over
   #    the high threshold mark.  If queue is above threshold for a consecutive
@@ -37,11 +36,19 @@ base:
   #     is scaled back a time.  It can take
   #     [writer_seconds_thread_scale_back * writer_max_threads_per_type - 1] time to scale
   #     back to one 1 (per type).
-  writer_seconds_thread_scale_back: 7200
+  writer_seconds_thread_scale_back: 4800
 
   # Number of seconds between rebalacing of writer threads
   #    Rebalance will drain writer queues at this interval if at least one writer is above threshold
-  writer_rebalance_seconds: 1800
+  writer_rebalance_seconds: 600
+
+  # Maximum input queue size
+  #   Normally within the range of 10000 - 50000 is enough
+  writer_queue_size: 30000
+
+  # Maximum input queue size for the consumer
+  #   A good starting size is 2 times the size of the writer queue size
+  consumer_queue_size: 60000
 
   # By default AS Path indexing is enabled.  This can be very resource intensive to psql
   #    and disk.   You can disable updating the psql 'as_path_analysis' table if
@@ -57,10 +64,11 @@ postgres:
 
 
   # The number of statements or records to batch in a single bulk update/insert/delete
-  batch_records: 500
+  #   NOTE: It's more efficient to have more threads with a low batch size
+  batch_records: 300
 
   # The time in milliseconds to wait for batching records in a bulk update/insert/delete
-  batch_time_millis: 75
+  batch_time_millis: 100
 
   # The number of times to retry a statement
   retries: 10
@@ -83,7 +91,7 @@ kafka:
     max.poll.interval.ms: 300000
     auto.offset.reset: "earliest"
     max.partition.fetch.bytes: 2000000
-    max.poll.records: 2000
+    max.poll.records: 1000
     fetch.max.wait.ms: 50
 
     # For TLS/SSL config follow Kafka consumer configuration guide for setting up SSL/TLS.

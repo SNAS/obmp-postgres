@@ -16,16 +16,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.openbmp.RouterObject;
 import org.openbmp.api.parsed.message.MsgBusFields;
 import org.openbmp.api.parsed.message.Message;
+import org.openbmp.api.parsed.message.RouterPojo;
+import org.openbmp.api.parsed.message.UnicastPrefixPojo;
 
 public class RouterQuery extends Query{
-	
-	
-	private Message message; 
-	
-	public RouterQuery(Message message, List<Map<String, Object>> rowMap){
-		
-		this.rowMap = rowMap;
-		this.message = message;
+    private final List<RouterPojo> records;
+    private String collector_hash;
+
+	public RouterQuery(String collector_hash, List<RouterPojo> records){
+        this.records = records;
+        this.collector_hash = collector_hash;
 	}
 	
     /**
@@ -60,29 +60,37 @@ public class RouterQuery extends Query{
     	//DefaultColumnValues.getDefaultValue("hash");
         StringBuilder sb = new StringBuilder();
 
-        for (int i=0; i < rowMap.size(); i++) {
+        int i = 0;
+        for (RouterPojo pojo : records) {
             if (i > 0)
                 sb.append(',');
+
+            i++;
+
             sb.append('(');
-            sb.append("'" + lookupValue(MsgBusFields.HASH, i) + "'::uuid,");
-            sb.append("'" + lookupValue(MsgBusFields.NAME, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.IP_ADDRESS, i)  + "'::inet,");
-            sb.append("'" + lookupValue(MsgBusFields.TIMESTAMP, i)  + "'::timestamp,");
 
-            sb.append((((String)lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("term") ? "'down'" : "'up'") + "::opstate,");
+            sb.append('\''); sb.append(pojo.getHash()); sb.append("'::uuid,");
+            sb.append('\''); sb.append(pojo.getName()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getIp_address()); sb.append("'::inet,");
+            sb.append('\''); sb.append(pojo.getTimestamp()); sb.append("'::timestamp,");
 
-            sb.append(  lookupValue(MsgBusFields.TERM_CODE, i) + ",");
-            sb.append("'" + lookupValue(MsgBusFields.TERM_REASON, i)  + "',");
-            sb.append("'" + lookupValue(MsgBusFields.TERM_DATA, i) + "',");
-            sb.append("'" + lookupValue(MsgBusFields.INIT_DATA, i)+ "',");
-            sb.append("'" + lookupValue(MsgBusFields.DESCRIPTION, i) + "',");
-            sb.append("'" + message.getCollector_hash_id() + "'::uuid,");
+            sb.append(pojo.getAction().equalsIgnoreCase("term") ? "'down'::opstate," : "'up'::opstate,");
 
+            sb.append(pojo.getTerm_code()); sb.append(',');
+            sb.append('\''); sb.append(pojo.getTerm_reason()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getTerm_data()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getInit_data()); sb.append("',");
+            sb.append('\''); sb.append(pojo.getDescription()); sb.append("',");
+            sb.append('\''); sb.append(collector_hash); sb.append("'::uuid,");
 
-            if (((String)lookupValue(MsgBusFields.LOCAL_IP, i)).length() > 2)
-                sb.append("'" + lookupValue(MsgBusFields.BGP_ID, i) + "'::inet,");
-            else
+            if (pojo.getBgp_id().length() > 2) {
+                sb.append('\'');
+                sb.append(pojo.getBgp_id());
+                sb.append("'::inet,");
+            } else {
                 sb.append("null");
+            }
+
             sb.append(')');
         }
 
@@ -94,7 +102,7 @@ public class RouterQuery extends Query{
     
 
     /**
-     * Generate MySQL update statement to update peer status
+     * Generate update statement to update peer status
      *
      * Avoids faulty report of peer status when router gets disconnected
      *
@@ -106,25 +114,21 @@ public class RouterQuery extends Query{
 
         StringBuilder sb = new StringBuilder();
 
-        List<Map<String, Object>> resultMap = new ArrayList<>();
-        resultMap.addAll(rowMap);
-
-
-        for (int i = 0; i < rowMap.size(); i++) {
+        for (RouterPojo pojo : records) {
 
             // update router object
             RouterObject rObj;
 
-            if (routerMap.containsKey(lookupValue(MsgBusFields.HASH, i))) {
-                rObj = routerMap.get(lookupValue(MsgBusFields.HASH, i));
+            if (routerMap.containsKey(pojo.getHash())) {
+                rObj = routerMap.get(pojo.getHash());
 
             } else {
                 rObj = new RouterObject();
-                routerMap.put((String)lookupValue(MsgBusFields.HASH, i), rObj);
+                routerMap.put(pojo.getHash(), rObj);
             }
 
-            if (((String) lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("first")
-                    || ((String) lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("init")) {
+            if (pojo.getAction().equalsIgnoreCase("first")
+                    || pojo.getAction().equalsIgnoreCase("init")) {
 
                 if (sb.length() > 0)
                     sb.append(";");
@@ -133,15 +137,15 @@ public class RouterQuery extends Query{
                     // Upon initial router message, we set the state of all peers to down since we will get peer UP's
                     //    multiple connections can exist, so this is only performed when this is the first connection
                     sb.append("UPDATE bgp_peers SET state = 'down' WHERE router_hash_id = '");
-                    sb.append(lookupValue(MsgBusFields.HASH, i) + "'");
-                    sb.append(" AND timestamp < '" + rowMap.get(i).get(MsgBusFields.TIMESTAMP.getName()) + "'");
+                    sb.append(pojo.getHash()); sb.append('\'');
+                    sb.append(" AND timestamp < '"); sb.append(pojo.getTimestamp()); sb.append('\'');
                 }
 
                 // bump the connection count
                 rObj.connection_count += 1;
             }
 
-            else if (((String) lookupValue(MsgBusFields.ACTION, i)).equalsIgnoreCase("term")) {
+            else if (pojo.getAction().equalsIgnoreCase("term")) {
 
                 if (rObj.connection_count > 0) {
                     rObj.connection_count -= 1;
@@ -150,8 +154,6 @@ public class RouterQuery extends Query{
                 //TODO: Considering updating peers with state = 0 on final term of router (connection_count == 0)
             }
         }
-
-        rowMap = resultMap;
 
         return sb.toString();
     }

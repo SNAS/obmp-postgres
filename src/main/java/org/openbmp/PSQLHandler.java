@@ -163,6 +163,7 @@ public class PSQLHandler {
                 logger.trace("SQL Query retry = %d: %s", i, query);
 
                 stmt.executeUpdate(query);
+                stmt.close();
 
                 i = retries;
                 success = Boolean.TRUE;

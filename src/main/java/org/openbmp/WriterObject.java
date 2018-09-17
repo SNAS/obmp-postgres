@@ -18,14 +18,14 @@ import java.util.concurrent.BlockingQueue;
  *
  */
 public class WriterObject {
-    private final Integer FIFO_QUEUE_SIZE = 20000;                  // Number of messages in queue allowed
-
     ///< Map of assigned record keys to this writer object/thread
     Map<String, Integer> assigned;
 
     ///< Number of times this object has been above queue high threashold
     Integer above_count;
 
+
+    Long message_count;
     WriterRunnable writerThread;
 
     /**
@@ -44,8 +44,9 @@ public class WriterObject {
      * @param cfg            Configuration from cli/config file
      */
     WriterObject(Config cfg) {
+        message_count = 0L;
         assigned = new HashMap<>();
-        writerQueue = new ArrayBlockingQueue(FIFO_QUEUE_SIZE);
+        writerQueue = new ArrayBlockingQueue(cfg.getWriter_queue_size());
         writerThread = new WriterRunnable(cfg, writerQueue);
         above_count = 0;
     }
