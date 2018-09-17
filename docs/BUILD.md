@@ -5,10 +5,12 @@ Dependencies
 - Java 1.8 or greater
 - Maven 3.x or greater
 - Python psycopg2-binary
+- DNS Python
  
 #### Example: Install depends on Ubuntu 16.04:
     sudo apt-get install git openjdk-9-jdk git openjdk-9-jre-headless maven
     sudo pip install psycopg2-binary
+    sudo pip install dnspython
     
 
 Build

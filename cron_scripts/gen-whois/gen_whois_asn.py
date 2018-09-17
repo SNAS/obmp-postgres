@@ -17,6 +17,7 @@ from collections import OrderedDict
 from time import sleep
 import subprocess
 import traceback
+import dns.resolver
 
 TBL_GEN_WHOIS_ASN_NAME = "info_asn"
 
@@ -251,6 +252,25 @@ def walkWhois(db, asnList):
             if ('as_name' in record):
                 record['source'] = source
                 break
+
+        # If not found via whois, try DNS
+        if 'as_name' not in record:
+            try:
+                answers = dns.resolver.query("AS%d.asn.cymru.com" % asn, 'TXT')
+                if len(answers) >= 1:
+                    txt = str(answers[0]).split("|")
+                    if len(txt) >= 5:
+                        a_name = txt[4].split(' - ', 2)
+                        as_name = a_name[0].replace('"', '').strip()
+                        org_name = a_name[1].replace('"', '').strip() if len(a_name) > 1 else as_name
+
+                        record['source'] = "cymru-" + txt[2].strip()
+                        record['as_number'] = txt[0].strip()
+                        record['as_name'] = as_name
+                        record['country'] = txt[1].strip()
+                        record['org_name'] = org_name
+            except:
+                pass
 
         # Only process the record if whois responded
         if ('as_name' in record):
