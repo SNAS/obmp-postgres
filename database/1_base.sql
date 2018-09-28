@@ -125,6 +125,10 @@ CREATE TABLE collectors (
 	PRIMARY KEY (hash_id)
 );
 
+ALTER TABLE collectors SET (autovacuum_analyze_threshold = 50);
+ALTER TABLE collectors SET (autovacuum_vacuum_threshold = 50);
+
+
 -- Table structure for table routers
 DROP TABLE IF EXISTS routers;
 CREATE TABLE routers (
@@ -149,6 +153,10 @@ CREATE TABLE routers (
 
 CREATE INDEX ON routers (name);
 CREATE INDEX ON routers (ip_address);
+
+ALTER TABLE routers SET (autovacuum_analyze_threshold = 50);
+ALTER TABLE routers SET (autovacuum_vacuum_threshold = 50);
+
 
 -- Table structure for table bgp_peers
 DROP TABLE IF EXISTS bgp_peers;
@@ -189,6 +197,10 @@ CREATE INDEX ON bgp_peers (peer_addr);
 CREATE INDEX ON bgp_peers (name);
 CREATE INDEX ON bgp_peers (peer_as);
 CREATE INDEX ON bgp_peers (router_hash_id);
+
+ALTER TABLE bgp_peers SET (autovacuum_analyze_threshold = 50);
+ALTER TABLE bgp_peers SET (autovacuum_vacuum_threshold = 50);
+
 
 -- Table structure for table peer_event_log
 --     updated by bgp_peers trigger
@@ -341,6 +353,7 @@ CREATE TABLE global_ip_rib (
     rpki_origin_as          bigint,
     irr_origin_as           bigint,
     irr_source              varchar(32),
+    num_peers               int                 DEFAULT 0,
     timestamp               timestamp           without time zone default (now() at time zone 'utc') NOT NULL,
 
     PRIMARY KEY (prefix,recv_origin_as)
@@ -374,6 +387,10 @@ CREATE TABLE info_asn (
     PRIMARY KEY (asn)
 );
 
+
+ALTER TABLE info_asn SET (autovacuum_analyze_threshold = 50);
+ALTER TABLE info_asn SET (autovacuum_vacuum_threshold = 50);
+
 -- Table structure for table info_route (based on whois)
 DROP TABLE IF EXISTS info_route;
 CREATE TABLE info_route (
@@ -386,6 +403,9 @@ CREATE TABLE info_route (
     PRIMARY KEY (prefix,prefix_len,origin_as)
 );
 CREATE INDEX ON info_route (origin_as);
+
+ALTER TABLE info_route SET (autovacuum_analyze_threshold = 50);
+ALTER TABLE info_route SET (autovacuum_vacuum_threshold = 50);
 
 
 -- Table structure for table as_path_analysis

@@ -94,13 +94,13 @@ BEGIN
   -- byprefix updates
   INSERT INTO stats_chg_byprefix (interval_time, peer_hash_id, prefix, prefix_len, withdraws,updates)
 	SELECT
-	       to_timestamp((extract(epoch from timestamp)::bigint / 300)::bigint * 300) at time zone 'utc' as IntervalTime,
+	       to_timestamp((extract(epoch from timestamp)::bigint / 900)::bigint * 900) at time zone 'utc' as IntervalTime,
 	       peer_hash_id,prefix,prefix_len,
 	       count(case WHEN ip_rib_log.iswithdrawn = true THEN 1 ELSE null END) as withdraws,
 	       count(case WHEN ip_rib_log.iswithdrawn = false THEN 1 ELSE null END) as updates
 	     FROM ip_rib_log
-	     WHERE timestamp >= to_timestamp((extract(epoch from now())::bigint / 300)::bigint * 300) at time zone 'utc' - int_window
-	           AND timestamp < to_timestamp((extract(epoch from now())::bigint / 300)::bigint * 300) at time zone 'utc'   -- current minute
+	     WHERE timestamp >= to_timestamp((extract(epoch from now())::bigint / 900)::bigint * 900) at time zone 'utc' - int_window
+	           AND timestamp < to_timestamp((extract(epoch from now())::bigint / 900)::bigint * 900) at time zone 'utc'   -- current minute
 	     GROUP BY IntervalTime,peer_hash_id,prefix,prefix_len
 	ON CONFLICT (interval_time,peer_hash_id,prefix) DO UPDATE
 		SET updates=excluded.updates, withdraws=excluded.withdraws;
@@ -139,13 +139,13 @@ BEGIN
 	UPDATE global_ip_rib SET should_delete = true;
 
     -- Load the global rib with the current state rib
-    INSERT INTO global_ip_rib (prefix,prefix_len,recv_origin_as,timestamp)
-        SELECT prefix,prefix_len,origin_as,max(timestamp)
+    INSERT INTO global_ip_rib (prefix,prefix_len,recv_origin_as,timestamp,num_peers)
+        SELECT prefix,prefix_len,origin_as,max(timestamp),count(peer_hash_id)
           FROM ip_rib
-          WHERE origin_as != 0 AND origin_as != 23456
+          WHERE origin_as != 0 AND origin_as != 23456 AND iswithdrawn = false
           GROUP BY prefix,prefix_len,origin_as
       ON CONFLICT (prefix,recv_origin_as)
-        DO UPDATE SET should_delete=false;
+        DO UPDATE SET should_delete=false, num_peers=excluded.num_peers;
 
     -- purge older records marked for deletion and if they are older than 2 hours
     DELETE FROM global_ip_rib where should_delete = true and timestamp < now () - interval '2 hours';

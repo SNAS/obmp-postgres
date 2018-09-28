@@ -45,7 +45,8 @@ CREATE  VIEW v_ip_routes AS
                 r.hash_id as rib_hash_id,
                 r.base_attr_hash_id as base_hash_id, r.peer_hash_id, rtr.hash_id as router_hash_id,r.isWithdrawn,
                 r.prefix_bits,r.isPrePolicy,r.isAdjRibIn
-        FROM bgp_peers p JOIN ip_rib r ON (r.peer_hash_id = p.hash_id)
+        FROM ip_rib r
+            JOIN bgp_peers p ON (r.peer_hash_id = p.hash_id)
             JOIN base_attrs attr ON (attr.hash_id = r.base_attr_hash_id and attr.peer_hash_id = r.peer_hash_id)
             JOIN routers rtr ON (p.router_hash_id = rtr.hash_id);
 
@@ -71,6 +72,71 @@ CREATE VIEW v_ip_routes_history AS
                             log.peer_hash_id = attr.peer_hash_id)
             JOIN bgp_peers p ON (log.peer_hash_id = p.hash_id)
             JOIN routers rtr ON (p.router_hash_id = rtr.hash_id);
+
+
+--
+-- Peer class, used for ranking internet peers
+--
+CREATE VIEW v_peers_class AS
+  SELECT p.peer_hash_id,max(p.peerbgpid),
+      CASE last(ispeeripv4, lastmodified) WHEN true THEN 'IPv4' ELSE 'IPv6' END as peer_ipv,
+      max(RouterName) as "RouterName",
+      max(PeerName) as "PeerName",
+      max(PeerIP) as "PeerIP",
+      max(PeerASN) as "PeerASN",
+      max(left(as_name, 28)) as "AS Name",
+      max(peer_state) as "State",
+      CASE last(isPeerIPv4, LastModified) WHEN true THEN
+        CASE WHEN last(v4_prefixes,interval_time) > 700000
+              THEN 'full'
+            WHEN last(v4_prefixes, interval_time) > 300000
+              THEN 'partial'
+            WHEN last(v4_prefixes, interval_time) > 100000
+              THEN 'weak'
+            WHEN last(v4_prefixes, interval_time) > 9000
+              THEN 'poor'
+            ELSE 'customer_only'
+          END
+        ELSE
+            CASE WHEN last(v6_prefixes, interval_time) > 50000
+              THEN 'full'
+            WHEN last(v6_prefixes, interval_time) > 20000
+              THEN 'partial'
+            WHEN last(v6_prefixes, interval_time) > 10000
+              THEN 'weak'
+            WHEN last(v6_prefixes, interval_time) > 1000
+              THEN 'poor'
+            ELSE 'customer_only'
+          END
+        END as rib_class,
+      CASE WHEN last(p.ispeeripv4,LastModified) THEN last(v4_prefixes, interval_time) ELSE last(v6_prefixes, interval_time) END as "Prefixes",
+      CASE WHEN max(avg_updates) > 1200 THEN 'above'
+          WHEN max(avg_updates) > 100 THEN 'normal'
+          ELSE 'below' END as update_class,
+
+      CASE WHEN max(avg_withdraws) > 150 THEN 'above'
+          WHEN max(avg_withdraws) > 10 THEN 'normal'
+          ELSE 'below' END as withdraw_class,
+      (SELECT count(distinct asn_right)
+        FROM as_path_analysis
+        where asn = max(p.peerasn) and asn_left = 0) as connections,
+      (select count(distinct asn_right)
+        FROM as_path_analysis
+        where asn = max(p.peerasn) and asn_left > 0 and asn_right > 0
+            and timestamp >= now() - interval '2 weeks') as transit_connections,
+      max(avg_withdraws) as withdraw_avg, max(avg_updates) as updates_avg,
+      max(LastModified) as "LastModified",
+      CASE WHEN max(peer_state) = 'up' THEN 1 ELSE 0 END as stateBool
+  FROM v_peers p
+    LEFT JOIN stats_peer_rib s ON (p.peer_hash_id = s.peer_hash_id
+            AND s.interval_time >= now() - interval '40 minutes')
+    LEFT JOIN (SELECT
+            peer_hash_id,avg(advertise_avg)::int as avg_updates,avg(withdraw_avg)::int as avg_withdraws
+        FROM stats_peer_update_counts
+        WHERE interval_time >= now() - interval '2 day'
+        GROUP BY peer_hash_id
+      ) u ON (u.peer_hash_id = p.peer_hash_id)
+  GROUP BY p.peer_hash_id;
 
 
 --
